@@ -102,6 +102,59 @@ serv_top_axi #(
 
 ---
 
+## 💻 Compilação do Firmware (Clang / GCC)
+
+O código fonte C utilizado no testbench está localizado em [`sim/firmware/`](file:///sim/firmware/) e calcula aproximações da série de Leibniz para $\pi$ em ponto fixo Q2.30 (`main.c`), com inicialização baremetal em assembly RV32I (`start.S`).
+
+O arquivo [`sim/firmware/firmware.hex`](file:///sim/firmware/firmware.hex) incluído no repositório foi gerado a partir desse código fonte. Você pode recompilar o firmware facilmente usando o script automatizado ou diretamente via linha de comando com **Clang/LLVM** ou **GCC**.
+
+### 1. Recompilação Automática (Script)
+
+O script detecta automaticamente se você possui **Clang/LLVM** ou a toolchain **RISC-V GCC**:
+
+```bash
+cd sim/firmware
+bash build_hex.sh
+```
+
+### 2. Compilação Manual com Clang / LLVM
+
+O Clang possui suporte nativo à arquitetura RISC-V RV32I baremetal sem requerer uma toolchain externa separada:
+
+```bash
+cd sim/firmware
+
+# Compila e linka diretamente para ELF RV32I baremetal
+clang --target=riscv32 -march=rv32i -mabi=ilp32 -O2 -nostdlib \
+      -Wl,-T,linker.ld start.S main.c -o pi.elf
+
+# Gera o arquivo HEX no formato Verilog compatível com $readmemh (palavras de 32 bits)
+llvm-objcopy -O verilog --verilog-data-width=4 pi.elf pi_raw.hex
+
+# Ajusta formatação para o simulador
+awk '!/^@/ { for(i=1; i<=NF; i++) print $i }' pi_raw.hex > firmware.hex
+```
+
+### 3. Compilação Manual com RISC-V GCC
+
+Caso utilize a toolchain GNU (`riscv32-unknown-elf-gcc` ou `riscv64-unknown-elf-gcc`):
+
+```bash
+cd sim/firmware
+
+# Compilação e linkedição com libgcc para suporte à divisão/multiplicação por software
+riscv32-unknown-elf-gcc -march=rv32i -mabi=ilp32 -O2 -nostartfiles \
+      -T linker.ld start.S main.c -lgcc -Wl,--no-warn-mismatch -o pi.elf
+
+# Extração do formato Verilog HEX
+riscv32-unknown-elf-objcopy -O verilog --verilog-data-width=4 pi.elf pi_raw.hex
+
+# Ajusta formatação para o simulador
+awk '!/^@/ { for(i=1; i<=NF; i++) print $i }' pi_raw.hex > firmware.hex
+```
+
+---
+
 ## 📄 Licença
 
 Distribuído sob a licença [Apache 2.0](LICENSE), compatível com o projeto SERV original.
