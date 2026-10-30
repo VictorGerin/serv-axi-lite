@@ -3,7 +3,10 @@
 // Testbench Autonomo e Completo para o Core serv_top_axi
 //
 // Conecta o nucleo serv_top_axi (iBus e dBus) atraves do interconnect AXI4-Lite
-// aos perifericos e a BRAM, executando o firmware de calculo de PI (Leibniz)
+// aos perifericos necessarios e a BRAM:
+//   - Slave 0: BRAM (Instrucoes e Dados)
+//   - Slave 1: GPIO Dados (Valor de PI)
+//   - Slave 2: GPIO LED / Status de Conclusao
 // ============================================================================
 `timescale 1ns / 1ns
 `default_nettype none
@@ -13,7 +16,7 @@ module tb_serv_top_axi;
 
     parameter int ICACHE_WORDS = 64; // 0 = sem cache; >0 = tamanho da cache em palavras
     localparam int NUM_MASTERS = 2;  // iBus e dBus
-    localparam int NUM_SLAVES  = 4;  // BRAM, GPIO_DATA, SYSCON, GPIO_LED
+    localparam int NUM_SLAVES  = 3;  // Slave 0: BRAM, Slave 1: GPIO_DATA, Slave 2: GPIO_LED
 
     logic clk;
     logic rst_n;
@@ -45,13 +48,11 @@ module tb_serv_top_axi;
         .NUM_MASTERS (NUM_MASTERS),
         .NUM_SLAVES  (NUM_SLAVES),
         .SLAVE_BASE  ({
-            32'h5000_0000, // Slave 3: GPIO LED / Status de Conclusao
-            32'h8000_0000, // Slave 2: SYSCON
+            32'h5000_0000, // Slave 2: GPIO LED / Status de Conclusao
             32'h4000_0000, // Slave 1: GPIO Dados (Valor de PI)
             32'h0000_0000  // Slave 0: BRAM (Instrucoes e Dados)
         }),
         .SLAVE_MASK  ({
-            32'hF000_0000,
             32'hF000_0000,
             32'hF000_0000,
             32'hF000_0000
@@ -106,26 +107,20 @@ module tb_serv_top_axi;
         end
     end
 
-    // Slave 2: SYSCON Simples (HART_ID = 0, NUM_CORES = 1)
+    // Slave 2: GPIO LED / Conclusao
+    logic done_led;
     assign s_axi_miso[2].bresp   = 2'b00;
     assign s_axi_miso[2].rresp   = 2'b00;
+    assign s_axi_miso[2].rdata   = {31'd0, done_led};
     assign s_axi_miso[2].arready = 1'b1;
     assign s_axi_miso[2].rvalid  = s_axi_mosi[2].arvalid;
-
-    always_comb begin
-        if (s_axi_mosi[2].araddr[5:2] == 4'h0)
-            s_axi_miso[2].rdata = 32'd0; // HART_ID = 0
-        else if (s_axi_mosi[2].araddr[5:2] == 4'h1)
-            s_axi_miso[2].rdata = 32'd1; // NUM_CORES = 1
-        else
-            s_axi_miso[2].rdata = 32'd1; // CORE_EN = 1
-    end
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             s_axi_miso[2].awready <= 1'b0;
             s_axi_miso[2].wready  <= 1'b0;
             s_axi_miso[2].bvalid  <= 1'b0;
+            done_led              <= 1'b0;
         end else begin
             if (!s_axi_miso[2].awready && s_axi_mosi[2].awvalid && s_axi_mosi[2].wvalid && !s_axi_miso[2].bvalid) begin
                 s_axi_miso[2].awready <= 1'b1;
@@ -134,42 +129,14 @@ module tb_serv_top_axi;
                 s_axi_miso[2].awready <= 1'b0;
                 s_axi_miso[2].wready  <= 1'b0;
                 s_axi_miso[2].bvalid  <= 1'b1;
+                if (s_axi_mosi[2].wdata[0]) done_led <= 1'b1;
             end else if (s_axi_miso[2].bvalid && s_axi_mosi[2].bready) begin
                 s_axi_miso[2].bvalid <= 1'b0;
             end
         end
     end
 
-    // Slave 3: GPIO LED / Conclusao
-    logic done_led;
-    assign s_axi_miso[3].bresp   = 2'b00;
-    assign s_axi_miso[3].rresp   = 2'b00;
-    assign s_axi_miso[3].rdata   = {31'd0, done_led};
-    assign s_axi_miso[3].arready = 1'b1;
-    assign s_axi_miso[3].rvalid  = s_axi_mosi[3].arvalid;
-
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            s_axi_miso[3].awready <= 1'b0;
-            s_axi_miso[3].wready  <= 1'b0;
-            s_axi_miso[3].bvalid  <= 1'b0;
-            done_led              <= 1'b0;
-        end else begin
-            if (!s_axi_miso[3].awready && s_axi_mosi[3].awvalid && s_axi_mosi[3].wvalid && !s_axi_miso[3].bvalid) begin
-                s_axi_miso[3].awready <= 1'b1;
-                s_axi_miso[3].wready  <= 1'b1;
-            end else if (s_axi_miso[3].awready && s_axi_miso[3].wready) begin
-                s_axi_miso[3].awready <= 1'b0;
-                s_axi_miso[3].wready  <= 1'b0;
-                s_axi_miso[3].bvalid  <= 1'b1;
-                if (s_axi_mosi[3].wdata[0]) done_led <= 1'b1;
-            end else if (s_axi_miso[3].bvalid && s_axi_mosi[3].bready) begin
-                s_axi_miso[3].bvalid <= 1'b0;
-            end
-        end
-    end
-
-    // Clock 50 MHz
+    // Clock 50 MHz (periodo 20 ns)
     always #10 clk = ~clk;
 
     // Inicializacao
@@ -186,7 +153,7 @@ module tb_serv_top_axi;
         $display("[TB] Reset desativado!");
     end
 
-    // Condicao de parada inteligente
+    // Condicao de parada inteligente (disparada pelo LED)
     always_ff @(posedge clk) begin
         if (rst_n && done_led) begin
             #200;
@@ -195,13 +162,13 @@ module tb_serv_top_axi;
             $display("     I-Cache Configuravel   : %0d palavras (%0d bytes)", ICACHE_WORDS, ICACHE_WORDS * 4);
             $display("     Resultado Final Q2.30  : 0x%08x", pi_val);
             $display("     Valor Convertido Float : %f", pi_val / (1.0 * (1 << 30)));
-            $display("     Status LED / Conclusao : 1 (Escrita no Slave[3])");
+            $display("     Status LED / Conclusao : 1 (Escrita no Slave[2])");
             $display("=========================================================================");
             $finish;
         end
     end
 
-    // Timeout (2 ms)
+    // Timeout de seguranca (2 ms)
     initial begin
         #2000000;
         $display("[TB] ERRO: Timeout atingido!");

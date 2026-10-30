@@ -74,14 +74,14 @@ make test
 [TB] Iniciando Testbench Autonomo serv_top_axi (ICACHE_WORDS = 64)
 =========================================================================
 [TB] Reset desativado!
-[399690 ns] >>> [GPIO PI PROGRESSO] Data = 0xffffffff | Float = 4.000000
-[649050 ns] >>> [GPIO PI PROGRESSO] Data = 0xaaaaaaaa | Float = 2.666667
+[16150 ns] >>> [GPIO PI PROGRESSO] Data = 0xfffffffc | Float = 4.000000
+[19430 ns] >>> [GPIO PI PROGRESSO] Data = 0xaaaaaaa8 | Float = 2.666667
 =========================================================================
 [TB] SUCESSO: TESTBENCH serv_top_axi CONCLUIDO COM EXITO!
      I-Cache Configuravel   : 64 palavras (256 bytes)
-     Resultado Final Q2.30  : 0xaaaaaaaa
+     Resultado Final Q2.30  : 0xaaaaaaa8
      Valor Convertido Float : 2.666667
-     Status LED / Conclusao : 1 (Escrita no Slave[3])
+     Status LED / Conclusao : 1 (Escrita no Slave[2])
 =========================================================================
 ```
 
