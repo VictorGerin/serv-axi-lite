@@ -52,10 +52,20 @@ serv-axi-lite/
 
 ## 🧪 Simulação e Verificação
 
-Para simular o núcleo executando o cálculo de $\pi$ em ponto fixo via **Icarus Verilog** (ou dentro do ambiente Docker):
+Você pode executar o fluxo completo (compilação do firmware via **Clang**, conversão SystemVerilog e simulação via **Icarus Verilog**) diretamente através do `Makefile`:
 
 ```bash
-bash sim/run_sim.sh
+# 1. Verifica se todas as dependências estão presentes no ambiente
+make check-deps
+
+# 2. Compila o firmware C via Clang/LLVM e gera sim/firmware/firmware.hex
+make firmware
+
+# 3. Executa a simulação do testbench (tb_serv_top_axi) via Icarus Verilog
+make sim
+
+# Ou execute tudo de uma vez (firmware + sim):
+make test
 ```
 
 **Saída esperada no terminal:**

@@ -1,13 +1,18 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# ==============================================================================
+# run_sim.sh - Converte SV para Verilog e executa via Icarus Verilog (iverilog/vvp)
+# ==============================================================================
 set -e
 
-ROOT_DIR="/work"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 mkdir -p "$ROOT_DIR/build/sim/rtl"
 cd "$ROOT_DIR/build/sim"
 
 cp "$ROOT_DIR/sim/firmware/firmware.hex" ./firmware.hex
 
-echo ">>> [1/2] Convertendo SystemVerilog para Verilog..."
+echo ">>> [1/2] Convertendo SystemVerilog para Verilog via sv2v..."
 sv2v \
     "$ROOT_DIR/rtl/axi_lite_pkg.sv" \
     "$ROOT_DIR/rtl/wb_to_axi_lite.sv" \
