@@ -37,7 +37,42 @@ serv-axi-lite/
 │   ├── serv_top_axi.sv      # Modulo topo do processador SERV com interfaces AXI4-Lite
 │   ├── wb_to_axi_lite.sv    # Ponte de conversao Wishbone B3 -> AXI4-Lite Master
 │   └── serv_icache.sv       # Cache de instrucoes de mapeamento direto configuravel
+├── sim/
+│   ├── tb_serv_top_axi.sv   # Testbench autonomo com BRAM e Interconnect AXI4-Lite
+│   ├── run_sim.sh           # Script de simulacao completo via sv2v + Icarus Verilog
+│   └── firmware/
+│       ├── main.c           # Firmware C de calculo de Pi (Leibniz) em ponto fixo Q2.30
+│       ├── start.S          # Inicializacao baremetal RISC-V RV32I
+│       ├── linker.ld        # Linker script baremetal (16 KB)
+│       └── firmware.hex     # Binario pre-compilado pronto para simulacao
 └── serv/                    # Submodulo git oficial do nucleo SERV (olofk/serv)
+```
+
+---
+
+## 🧪 Simulação e Verificação
+
+Para simular o núcleo executando o cálculo de $\pi$ em ponto fixo via **Icarus Verilog** (ou dentro do ambiente Docker):
+
+```bash
+bash sim/run_sim.sh
+```
+
+**Saída esperada no terminal:**
+```text
+=========================================================================
+[TB] Iniciando Testbench Autonomo serv_top_axi (ICACHE_WORDS = 64)
+=========================================================================
+[TB] Reset desativado!
+[399690 ns] >>> [GPIO PI PROGRESSO] Data = 0xffffffff | Float = 4.000000
+[649050 ns] >>> [GPIO PI PROGRESSO] Data = 0xaaaaaaaa | Float = 2.666667
+=========================================================================
+[TB] SUCESSO: TESTBENCH serv_top_axi CONCLUIDO COM EXITO!
+     I-Cache Configuravel   : 64 palavras (256 bytes)
+     Resultado Final Q2.30  : 0xaaaaaaaa
+     Valor Convertido Float : 2.666667
+     Status LED / Conclusao : 1 (Escrita no Slave[3])
+=========================================================================
 ```
 
 ---
