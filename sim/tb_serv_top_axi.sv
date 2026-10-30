@@ -3,10 +3,10 @@
 // Testbench Autonomo e Completo para o Core serv_top_axi
 //
 // Conecta o nucleo serv_top_axi (iBus e dBus) atraves do interconnect AXI4-Lite
-// aos perifericos necessarios e a BRAM:
-//   - Slave 0: BRAM (Instrucoes e Dados)
-//   - Slave 1: GPIO Dados (Valor de PI)
-//   - Slave 2: GPIO LED / Status de Conclusao
+// aos perifericos modulares necessarios e a BRAM:
+//   - Slave 0: axi_lite_bram (Instrucoes e Dados)
+//   - Slave 1: axi_lite_gpio (GPIO Dados: Valor de PI)
+//   - Slave 2: axi_lite_gpio (GPIO LED / Status de Conclusao)
 // ============================================================================
 `timescale 1ns / 1ns
 `default_nettype none
@@ -74,67 +74,44 @@ module tb_serv_top_axi;
         .s_axi_miso    (s_axi_miso[0])
     );
 
-    // Slave 1: GPIO de Dados (captura o valor de PI)
+    // Slave 1: Instancia Modular do Periferico AXI4-Lite GPIO (Dados / PI)
     logic [31:0] pi_val;
-    assign s_axi_miso[1].bresp   = 2'b00;
-    assign s_axi_miso[1].rresp   = 2'b00;
-    assign s_axi_miso[1].rdata   = pi_val;
-    assign s_axi_miso[1].arready = 1'b1;
-    assign s_axi_miso[1].rvalid  = s_axi_mosi[1].arvalid;
+    axi_lite_gpio u_gpio_data (
+        .s_axi_aclk    (clk),
+        .s_axi_aresetn (rst_n),
+        .s_axi_mosi    (s_axi_mosi[1]),
+        .s_axi_miso    (s_axi_miso[1]),
+        .gpio_io_i     (32'd0),
+        .gpio_io_o     (pi_val),
+        .gpio_io_t     ()
+    );
 
+    // Monitora escritas de progresso no GPIO de Dados
+    logic [31:0] prev_pi_val;
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            s_axi_miso[1].awready <= 1'b0;
-            s_axi_miso[1].wready  <= 1'b0;
-            s_axi_miso[1].bvalid  <= 1'b0;
-            pi_val                <= 32'd0;
-        end else begin
-            if (!s_axi_miso[1].awready && s_axi_mosi[1].awvalid && s_axi_mosi[1].wvalid && !s_axi_miso[1].bvalid) begin
-                s_axi_miso[1].awready <= 1'b1;
-                s_axi_miso[1].wready  <= 1'b1;
-            end else if (s_axi_miso[1].awready && s_axi_miso[1].wready) begin
-                s_axi_miso[1].awready <= 1'b0;
-                s_axi_miso[1].wready  <= 1'b0;
-                s_axi_miso[1].bvalid  <= 1'b1;
-                if (s_axi_mosi[1].awaddr[3:2] == 2'b00 && s_axi_mosi[1].wdata != 32'd0) begin
-                    pi_val <= s_axi_mosi[1].wdata;
-                    $display("[%0t ns] >>> [GPIO PI PROGRESSO] Data = 0x%08x | Float = %f",
-                             $time, s_axi_mosi[1].wdata, s_axi_mosi[1].wdata / (1.0 * (1 << 30)));
-                end
-            end else if (s_axi_miso[1].bvalid && s_axi_mosi[1].bready) begin
-                s_axi_miso[1].bvalid <= 1'b0;
-            end
+            prev_pi_val <= 32'd0;
+        end else if (pi_val != 32'd0 && pi_val != prev_pi_val) begin
+            prev_pi_val <= pi_val;
+            $display("[%0t ns] >>> [GPIO PI PROGRESSO] Data = 0x%08x | Float = %f",
+                     $time, pi_val, pi_val / (1.0 * (1 << 30)));
         end
     end
 
-    // Slave 2: GPIO LED / Conclusao
-    logic done_led;
-    assign s_axi_miso[2].bresp   = 2'b00;
-    assign s_axi_miso[2].rresp   = 2'b00;
-    assign s_axi_miso[2].rdata   = {31'd0, done_led};
-    assign s_axi_miso[2].arready = 1'b1;
-    assign s_axi_miso[2].rvalid  = s_axi_mosi[2].arvalid;
+    // Slave 2: Instancia Modular do Periferico AXI4-Lite GPIO (LED / Conclusao)
+    logic [31:0] gpio_led_val;
+    logic        done_led;
+    assign done_led = gpio_led_val[0];
 
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            s_axi_miso[2].awready <= 1'b0;
-            s_axi_miso[2].wready  <= 1'b0;
-            s_axi_miso[2].bvalid  <= 1'b0;
-            done_led              <= 1'b0;
-        end else begin
-            if (!s_axi_miso[2].awready && s_axi_mosi[2].awvalid && s_axi_mosi[2].wvalid && !s_axi_miso[2].bvalid) begin
-                s_axi_miso[2].awready <= 1'b1;
-                s_axi_miso[2].wready  <= 1'b1;
-            end else if (s_axi_miso[2].awready && s_axi_miso[2].wready) begin
-                s_axi_miso[2].awready <= 1'b0;
-                s_axi_miso[2].wready  <= 1'b0;
-                s_axi_miso[2].bvalid  <= 1'b1;
-                if (s_axi_mosi[2].wdata[0]) done_led <= 1'b1;
-            end else if (s_axi_miso[2].bvalid && s_axi_mosi[2].bready) begin
-                s_axi_miso[2].bvalid <= 1'b0;
-            end
-        end
-    end
+    axi_lite_gpio u_gpio_led (
+        .s_axi_aclk    (clk),
+        .s_axi_aresetn (rst_n),
+        .s_axi_mosi    (s_axi_mosi[2]),
+        .s_axi_miso    (s_axi_miso[2]),
+        .gpio_io_i     (32'd0),
+        .gpio_io_o     (gpio_led_val),
+        .gpio_io_t     ()
+    );
 
     // Clock 50 MHz (periodo 20 ns)
     always #10 clk = ~clk;

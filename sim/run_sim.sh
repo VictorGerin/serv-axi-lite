@@ -20,6 +20,7 @@ sv2v \
     "$ROOT_DIR/rtl/serv_top_axi.sv" \
     "$ROOT_DIR/sim/axi_lite_interconnect.sv" \
     "$ROOT_DIR/sim/axi_lite_bram.sv" \
+    "$ROOT_DIR/sim/axi_lite_gpio.sv" \
     "$ROOT_DIR/sim/tb_serv_top_axi.sv" \
     --write=./rtl
 
