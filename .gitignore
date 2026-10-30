@@ -1,0 +1,13 @@
+# Build artifacts
+build/
+*.vvp
+*.vcd
+*.bit
+*.bin
+*.mcs
+
+# Editor & OS files
+.DS_Store
+*.swp
+*~
+Thumbs.db
