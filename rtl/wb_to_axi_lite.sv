@@ -35,9 +35,11 @@ module wb_to_axi_lite
 );
 
     logic active;
+    logic rst_released;
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
+            rst_released       <= 1'b0;
             wb_dat_r           <= 32'd0;
             wb_ack             <= 1'b0;
             m_axi_mosi.awaddr  <= 32'd0;
@@ -52,11 +54,12 @@ module wb_to_axi_lite
             m_axi_mosi.master_id <= 8'd0;
             active             <= 1'b0;
         end else begin
+            rst_released <= 1'b1;
             wb_ack <= 1'b0;
 
             if (wb_ack) begin
                 active <= 1'b0;
-            end else if (!active) begin
+            end else if (!active && rst_released) begin
                 if (wb_cyc) begin
                     active <= 1'b1;
                     if (wb_we) begin
