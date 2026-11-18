@@ -16,18 +16,14 @@
 
 module wb_to_axi_lite
     import axi_lite_pkg::*;
+    import wb_pkg::*;
 (
     input  logic        clk,
     input  logic        rst_n,
 
     // Interface Wishbone Escravo (conectada ao mestre da CPU/Cache)
-    input  logic [31:0] wb_adr,
-    input  logic [31:0] wb_dat_w,
-    output logic [31:0] wb_dat_r,
-    input  logic [3:0]  wb_sel,
-    input  logic        wb_we,
-    input  logic        wb_cyc,
-    output logic        wb_ack,
+    input  wb_mosi_t    wb_mosi,
+    output wb_miso_t    wb_miso,
 
     // Interface AXI4-Lite Mestre (conectada ao Interconnect)
     output axi_lite_mosi_t m_axi_mosi,
@@ -40,8 +36,8 @@ module wb_to_axi_lite
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             rst_released       <= 1'b0;
-            wb_dat_r           <= 32'd0;
-            wb_ack             <= 1'b0;
+            wb_miso.rdt        <= 32'd0;
+            wb_miso.ack        <= 1'b0;
             m_axi_mosi.awaddr  <= 32'd0;
             m_axi_mosi.awvalid <= 1'b0;
             m_axi_mosi.wdata   <= 32'd0;
@@ -55,24 +51,24 @@ module wb_to_axi_lite
             active             <= 1'b0;
         end else begin
             rst_released <= 1'b1;
-            wb_ack <= 1'b0;
+            wb_miso.ack  <= 1'b0;
 
-            if (wb_ack) begin
+            if (wb_miso.ack) begin
                 active <= 1'b0;
             end else if (!active && rst_released) begin
-                if (wb_cyc) begin
+                if (wb_mosi.cyc) begin
                     active <= 1'b1;
-                    if (wb_we) begin
+                    if (wb_mosi.we) begin
                         // Transacao de Escrita (AW, W, B)
-                        m_axi_mosi.awaddr  <= wb_adr;
+                        m_axi_mosi.awaddr  <= wb_mosi.adr;
                         m_axi_mosi.awvalid <= 1'b1;
-                        m_axi_mosi.wdata   <= wb_dat_w;
-                        m_axi_mosi.wstrb   <= wb_sel;
+                        m_axi_mosi.wdata   <= wb_mosi.dat;
+                        m_axi_mosi.wstrb   <= wb_mosi.sel;
                         m_axi_mosi.wvalid  <= 1'b1;
                         m_axi_mosi.bready  <= 1'b1;
                     end else begin
                         // Transacao de Leitura (AR, R)
-                        m_axi_mosi.araddr  <= wb_adr;
+                        m_axi_mosi.araddr  <= wb_mosi.adr;
                         m_axi_mosi.arvalid <= 1'b1;
                         m_axi_mosi.rready  <= 1'b1;
                     end
@@ -89,7 +85,7 @@ module wb_to_axi_lite
                 end
                 if (m_axi_miso.bvalid && m_axi_mosi.bready) begin
                     m_axi_mosi.bready <= 1'b0;
-                    wb_ack            <= 1'b1;
+                    wb_miso.ack       <= 1'b1;
                 end
 
                 // -------------------------------------------------------------
@@ -100,8 +96,8 @@ module wb_to_axi_lite
                 end
                 if (m_axi_miso.rvalid && m_axi_mosi.rready) begin
                     m_axi_mosi.rready <= 1'b0;
-                    wb_dat_r          <= m_axi_miso.rdata;
-                    wb_ack            <= 1'b1;
+                    wb_miso.rdt       <= m_axi_miso.rdata;
+                    wb_miso.ack       <= 1'b1;
                 end
             end
         end

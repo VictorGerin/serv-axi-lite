@@ -7,6 +7,7 @@
 
 module serv_top_axi
     import axi_lite_pkg::*;
+    import wb_pkg::*;
 #(
     parameter logic [31:0] RESET_PC     = 32'h0000_0000,
     parameter int          ICACHE_WORDS = 0
@@ -28,16 +29,19 @@ module serv_top_axi
     // ------------------------------------------------------------------------
     // Sinais internos Wishbone (iBus e dBus) do nucleo SERV
     // ------------------------------------------------------------------------
-    logic [31:0] cpu_ibus_adr;
-    logic        cpu_ibus_cyc;
-    logic [31:0] cpu_ibus_rdt;
-    logic        cpu_ibus_ack;
+    wb_mosi_t cpu_ibus_mosi;
+    wb_miso_t cpu_ibus_miso;
 
     // Sinais de instrucao conectados ao arbitro AXI (diretos ou via I-Cache)
-    logic [31:0] axi_ibus_adr;
-    logic        axi_ibus_cyc;
-    logic [31:0] axi_ibus_rdt;
-    logic        axi_ibus_ack;
+    wb_mosi_t axi_ibus_mosi;
+    wb_miso_t axi_ibus_miso;
+
+    wb_mosi_t wb_dbus_mosi;
+    wb_miso_t wb_dbus_miso;
+
+    assign axi_ibus_mosi.dat = 32'd0;
+    assign axi_ibus_mosi.sel = 4'b1111;
+    assign axi_ibus_mosi.we  = 1'b0;
 
     generate
         if (ICACHE_WORDS > 0) begin : gen_icache
@@ -46,31 +50,22 @@ module serv_top_axi
             ) u_serv_icache (
                 .clk     (aclk),
                 .rst     (i_rst),
-                .cpu_adr (cpu_ibus_adr),
-                .cpu_cyc (cpu_ibus_cyc),
-                .cpu_rdt (cpu_ibus_rdt),
-                .cpu_ack (cpu_ibus_ack),
-                .mem_adr (axi_ibus_adr),
-                .mem_cyc (axi_ibus_cyc),
-                .mem_rdt (axi_ibus_rdt),
-                .mem_ack (axi_ibus_ack)
+                .cpu_adr (cpu_ibus_mosi.adr),
+                .cpu_cyc (cpu_ibus_mosi.cyc),
+                .cpu_rdt (cpu_ibus_miso.rdt),
+                .cpu_ack (cpu_ibus_miso.ack),
+                .mem_adr (axi_ibus_mosi.adr),
+                .mem_cyc (axi_ibus_mosi.cyc),
+                .mem_rdt (axi_ibus_miso.rdt),
+                .mem_ack (axi_ibus_miso.ack)
             );
         end else begin : gen_no_icache
             // Bypass completo: conexao 100% direta e identica ao circuito original
-            assign axi_ibus_adr = cpu_ibus_adr;
-            assign axi_ibus_cyc = cpu_ibus_cyc;
-            assign cpu_ibus_rdt = axi_ibus_rdt;
-            assign cpu_ibus_ack = axi_ibus_ack;
+            assign axi_ibus_mosi.adr = cpu_ibus_mosi.adr;
+            assign axi_ibus_mosi.cyc = cpu_ibus_mosi.cyc;
+            assign cpu_ibus_miso     = axi_ibus_miso;
         end
     endgenerate
-
-    logic [31:0] wb_dbus_adr;
-    logic [31:0] wb_dbus_dat;
-    logic [3:0]  wb_dbus_sel;
-    logic        wb_dbus_we;
-    logic        wb_dbus_cyc;
-    logic [31:0] wb_dbus_rdt;
-    logic        wb_dbus_ack;
 
     // ------------------------------------------------------------------------
     // Banco de Registradores em SRAM (512 x 2 bits) + Interface RF do SERV
@@ -180,17 +175,11 @@ module serv_top_axi
     // ------------------------------------------------------------------------
     // Instancia do Nucleo SERV Oficial (`src/rtl/serv/rtl/serv_top.v`)
     // ------------------------------------------------------------------------
-    serv_top #(
+    serv_wrapper #(
+        .WITH_CSR       (1'b0),
         .RESET_PC       (RESET_PC),
-        .PRE_REGISTER   (1),
-        .RESET_STRATEGY ("MINI"),
-        .WITH_CSR       (0),
-        .DEBUG          (1'b0),
-        .MDU            (1'b0),
-        .COMPRESSED     (1'b0),
-        .ALIGN          (1'b0),
-        .W              (1)
-    ) u_serv_top (
+        .RESET_STRATEGY ("MINI")
+    ) u_serv_wrapper (
         .clk          (aclk),
         .i_rst        (i_rst),
         .i_timer_irq  (i_timer_irq),
@@ -209,25 +198,11 @@ module serv_top_axi
         .i_rdata0     (rdata0),
         .i_rdata1     (rdata1),
 
-        .o_ibus_adr   (cpu_ibus_adr),
-        .o_ibus_cyc   (cpu_ibus_cyc),
-        .i_ibus_rdt   (cpu_ibus_rdt),
-        .i_ibus_ack   (cpu_ibus_ack),
+        .o_ibus_mosi  (cpu_ibus_mosi),
+        .i_ibus_miso  (cpu_ibus_miso),
 
-        .o_dbus_adr   (wb_dbus_adr),
-        .o_dbus_dat   (wb_dbus_dat),
-        .o_dbus_sel   (wb_dbus_sel),
-        .o_dbus_we    (wb_dbus_we),
-        .o_dbus_cyc   (wb_dbus_cyc),
-        .i_dbus_rdt   (wb_dbus_rdt),
-        .i_dbus_ack   (wb_dbus_ack),
-
-        .o_ext_funct3 (),
-        .i_ext_ready  (1'b0),
-        .i_ext_rd     (32'd0),
-        .o_ext_rs1    (),
-        .o_ext_rs2    (),
-        .o_mdu_valid  ()
+        .o_dbus_mosi  (wb_dbus_mosi),
+        .i_dbus_miso  (wb_dbus_miso)
     );
 
     // ------------------------------------------------------------------------
@@ -237,13 +212,8 @@ module serv_top_axi
     wb_to_axi_lite u_wb2axi_ibus (
         .clk        (aclk),
         .rst_n      (aresetn),
-        .wb_adr     (axi_ibus_adr),
-        .wb_dat_w   (32'd0),
-        .wb_dat_r   (axi_ibus_rdt),
-        .wb_sel     (4'b1111),
-        .wb_we      (1'b0),
-        .wb_cyc     (axi_ibus_cyc),
-        .wb_ack     (axi_ibus_ack),
+        .wb_mosi    (axi_ibus_mosi),
+        .wb_miso    (axi_ibus_miso),
         .m_axi_mosi (m_axi_ibus_mosi),
         .m_axi_miso (m_axi_ibus_miso)
     );
@@ -252,13 +222,8 @@ module serv_top_axi
     wb_to_axi_lite u_wb2axi_dbus (
         .clk        (aclk),
         .rst_n      (aresetn),
-        .wb_adr     (wb_dbus_adr),
-        .wb_dat_w   (wb_dbus_dat),
-        .wb_dat_r   (wb_dbus_rdt),
-        .wb_sel     (wb_dbus_sel),
-        .wb_we      (wb_dbus_we),
-        .wb_cyc     (wb_dbus_cyc),
-        .wb_ack     (wb_dbus_ack),
+        .wb_mosi    (wb_dbus_mosi),
+        .wb_miso    (wb_dbus_miso),
         .m_axi_mosi (m_axi_dbus_mosi),
         .m_axi_miso (m_axi_dbus_miso)
     );
