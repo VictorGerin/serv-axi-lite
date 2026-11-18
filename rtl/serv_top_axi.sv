@@ -127,25 +127,17 @@ module serv_top_axi
     logic       ren;
     assign ren = rgate;
 
-    logic [1:0] rf_mem [0:511];
-    logic [1:0] rf_rdata_raw;
-    logic       regzero;
-
-    initial begin
-        for (int i = 0; i < 512; i++) begin
-            rf_mem[i] = 2'b00;
-        end
-    end
-
-    always_ff @(posedge aclk) begin
-        if (wen)
-            rf_mem[waddr] <= wdata;
-        rf_rdata_raw <= ren ? rf_mem[raddr] : 2'b00;
-        regzero      <= !(|raddr[8:4]);
-    end
-
     logic [1:0] rf_rdata;
-    assign rf_rdata = rf_rdata_raw & ~{2{regzero}};
+
+    serv_rf_ram u_rf_ram (
+        .i_clk   (aclk),
+        .i_waddr (waddr),
+        .i_wdata (wdata),
+        .i_wen   (wen),
+        .i_raddr (raddr),
+        .i_ren   (ren),
+        .o_rdata (rf_rdata)
+    );
 
     assign rf_ready = rgnt | rf_wreq;
     assign rdata0   = rdata0_sh[0];
