@@ -8,7 +8,7 @@ module serv_rf_ram (
     output logic [1:0] o_rdata
 );
 
-    logic [1:0] rf_mem [0:511];
+    (* ram_style = "distributed" *) logic [1:0] rf_mem [0:511];
     logic [1:0] rf_rdata_raw;
     logic       regzero;
 
