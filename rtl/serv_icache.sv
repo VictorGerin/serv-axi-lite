@@ -49,68 +49,115 @@ module serv_icache #(
     localparam int IDX_BITS = get_idx_bits(NUM_WORDS);
     localparam int TAG_BITS = 32 - 2 - IDX_BITS;
 
-    // Memoria interna da I-Cache: Tags, Valid e Dados (palavras de 32 bits)
-    logic [TAG_BITS-1:0] tag_mem   [0:NUM_WORDS-1];
-    logic                valid_mem [0:NUM_WORDS-1];
-    logic [31:0]         data_mem  [0:NUM_WORDS-1];
+    // Memoria interna da I-Cache: {Valid, Tag} e Dados em Block RAM (RAMB16BWER)
+    // Zero LUTs/FFs para valid_mem: bit MSB de tag_mem armazena valid e eh limpo em STATE_FLUSH no reset.
+    (* ram_style = "block" *) logic [TAG_BITS:0] tag_mem  [0:NUM_WORDS-1];
+    (* ram_style = "block" *) logic [31:0]       data_mem [0:NUM_WORDS-1];
 
     // Decomposicao do endereco RISC-V alinhado em palavras (bits [1:0] sempre 00)
     wire [IDX_BITS-1:0] line_idx = cpu_adr[IDX_BITS+1 : 2];
     wire [TAG_BITS-1:0] req_tag  = cpu_adr[31 : IDX_BITS+2];
 
-    wire line_valid = valid_mem[line_idx];
-    wire line_hit   = line_valid && (tag_mem[line_idx] == req_tag);
-
-    // FSM de controle de Miss
-    typedef enum logic {
+    // FSM de controle de Flush, Lookup e Miss
+    typedef enum logic [1:0] {
+        STATE_FLUSH,
         STATE_IDLE,
+        STATE_LOOKUP,
         STATE_MISS_WAIT
     } state_t;
 
     state_t state;
 
+    logic [TAG_BITS:0]   tag_rdata;
+    logic [31:0]         data_rdata;
+    logic [IDX_BITS-1:0] flush_idx;
+    logic [IDX_BITS-1:0] req_idx_r;
+    logic [TAG_BITS-1:0] req_tag_r;
+    logic [31:0]         req_adr_r;
+
+    wire is_flushing = (state == STATE_FLUSH);
+    wire data_we     = (state == STATE_MISS_WAIT) && mem_ack;
+    wire tag_we      = is_flushing || data_we;
+
+    wire [IDX_BITS-1:0] tag_waddr = is_flushing ? flush_idx : req_idx_r;
+    wire [TAG_BITS:0]   tag_wdata = is_flushing ? '0 : {1'b1, req_tag_r};
+
+    // Portas sincronas sem reset para inferencia garantida de Block RAM (RAMB16BWER)
+    always_ff @(posedge clk) begin
+        if (tag_we) begin
+            tag_mem[tag_waddr] <= tag_wdata;
+        end
+        tag_rdata <= tag_mem[line_idx];
+    end
+
+    always_ff @(posedge clk) begin
+        if (data_we) begin
+            data_mem[req_idx_r] <= mem_rdt;
+        end
+        data_rdata <= data_mem[line_idx];
+    end
+
     always_ff @(posedge clk) begin
         if (rst) begin
-            state   <= STATE_IDLE;
-            cpu_ack <= 1'b0;
-            cpu_rdt <= 32'd0;
-            mem_cyc <= 1'b0;
-            mem_adr <= 32'd0;
-            for (int i = 0; i < NUM_WORDS; i++) begin
-                valid_mem[i] <= 1'b0;
-            end
+            state     <= STATE_FLUSH;
+            flush_idx <= '0;
+            cpu_ack   <= 1'b0;
+            cpu_rdt   <= 32'd0;
+            mem_cyc   <= 1'b0;
+            mem_adr   <= 32'd0;
+            req_idx_r <= '0;
+            req_tag_r <= '0;
+            req_adr_r <= 32'd0;
         end else begin
             cpu_ack <= 1'b0;
 
             case (state)
+                STATE_FLUSH: begin
+                    mem_cyc <= 1'b0;
+                    if (flush_idx == IDX_BITS'(NUM_WORDS - 1)) begin
+                        state <= STATE_IDLE;
+                    end else begin
+                        flush_idx <= flush_idx + 1'b1;
+                    end
+                end
+
                 STATE_IDLE: begin
+                    mem_cyc <= 1'b0;
                     if (cpu_cyc && !cpu_ack) begin
-                        if (line_hit) begin
-                            // Cache Hit: responde em 1 ciclo diretamente da memoria interna!
-                            cpu_rdt <= data_mem[line_idx];
-                            cpu_ack <= 1'b1;
-                        end else begin
-                            // Cache Miss: dispara leitura na BRAM via barramento AXI
-                            mem_adr <= cpu_adr;
-                            mem_cyc <= 1'b1;
-                            state   <= STATE_MISS_WAIT;
-                        end
+                        req_idx_r <= line_idx;
+                        req_tag_r <= req_tag;
+                        req_adr_r <= cpu_adr;
+                        state     <= STATE_LOOKUP;
+                    end
+                end
+
+                STATE_LOOKUP: begin
+                    if (tag_rdata[TAG_BITS] && (tag_rdata[TAG_BITS-1:0] == req_tag_r)) begin
+                        // Cache Hit: dado lido da BRAM no ciclo anterior
+                        cpu_rdt <= data_rdata;
+                        cpu_ack <= 1'b1;
+                        state   <= STATE_IDLE;
+                    end else begin
+                        // Cache Miss: dispara leitura via barramento AXI
+                        mem_adr <= req_adr_r;
+                        mem_cyc <= 1'b1;
+                        state   <= STATE_MISS_WAIT;
                     end
                 end
 
                 STATE_MISS_WAIT: begin
                     if (mem_ack) begin
-                        // Preenche a linha de cache com a nova instrucao
-                        data_mem[line_idx]  <= mem_rdt;
-                        tag_mem[line_idx]   <= req_tag;
-                        valid_mem[line_idx] <= 1'b1;
-
-                        // Responde a CPU e finaliza o ciclo AXI
+                        // Entrega a instrucao ao nucleo (BRAM ja gravada via data_we/tag_we)
                         cpu_rdt <= mem_rdt;
                         cpu_ack <= 1'b1;
                         mem_cyc <= 1'b0;
                         state   <= STATE_IDLE;
                     end
+                end
+
+                default: begin
+                    state   <= STATE_IDLE;
+                    mem_cyc <= 1'b0;
                 end
             endcase
         end
